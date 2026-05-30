@@ -225,3 +225,5 @@ if st.button("Analisar todos os pares", type="primary"):
         st.dataframe(pd.DataFrame(linhas),use_container_width=True)
 
 st.caption(f"Actualizado: {datetime.now().strftime('%H:%M:%S')} | Email automatico >= 70%")
+
+# v4 2026-05-30 12:30
