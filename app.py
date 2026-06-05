@@ -33,7 +33,7 @@ def adicionar_indicadores(df):
     df["rsi"] = ta.momentum.RSIIndicator(df["Close"], window=14).rsi()
     df["ema20"] = ta.trend.EMAIndicator(df["Close"], window=20).ema_indicator()
     df["ema50"] = ta.trend.EMAIndicator(df["Close"], window=50).ema_indicator()
-    df["ema200"] = ta.trend.EMAIndicator(df["Close"], window=200).ema_indicator()
+    df["ema200"] = ta.trend.EMAIndicator(df["Close"], window=100).ema_indicator()
     df["atr"] = ta.volatility.AverageTrueRange(df["High"],df["Low"],df["Close"],window=14).average_true_range()
     df["corpo"] = abs(df["Close"]-df["Open"])
     df["media_corpo"] = df["corpo"].rolling(20).mean()
@@ -56,10 +56,16 @@ def fase1_estrutura_h1(par):
         if len(d)<5: return "NEUTRO"
         e20=float(d["ema20"].iloc[-1])
         e50=float(d["ema50"].iloc[-1])
+        e100=float(d["ema200"].iloc[-1])
         p=float(d["Close"].iloc[-1])
         del d; gc.collect()
-        if p>e20>e50: return "BULLISH"
-        elif p<e20<e50: return "BEARISH"
+        # Mais flexivel — basta preco e EMA20 alinhados
+        bull_pts = sum([p>e20, p>e50, p>e100, e20>e50])
+        bear_pts = sum([p<e20, p<e50, p<e100, e20<e50])
+        if bull_pts>=3: return "BULLISH"
+        elif bear_pts>=3: return "BEARISH"
+        elif bull_pts>=2: return "BULLISH"
+        elif bear_pts>=2: return "BEARISH"
         else: return "NEUTRO"
     except: return "NEUTRO"
 
@@ -237,8 +243,8 @@ def analisar(par, ignorar_sessao=False):
         sessao_ok=s["operar"] if not ignorar_sessao else True
 
         # Carrega M15
-        d15=obter_dados(par,"15m","3d")
-        if len(d15)<50:
+        d15=obter_dados(par,"15m","7d")
+        if len(d15)<30:
             del d15; gc.collect()
             return None
         d15=adicionar_indicadores(d15)
@@ -263,10 +269,14 @@ def analisar(par, ignorar_sessao=False):
         volume,vol_forte=fase4_volume(d15,par)
 
         # Define direcao
-        if liq_bull and (tendencia_m15=="BULLISH" or bos_ok): dr="BUY"
-        elif liq_bear and (tendencia_m15=="BEARISH" or bos_ok): dr="SELL"
-        elif tendencia_m15=="BULLISH" and bos_ok: dr="BUY"
-        elif tendencia_m15=="BEARISH" and bos_ok: dr="SELL"
+        if liq_bull and bos_ok: dr="BUY"
+        elif liq_bear and bos_ok: dr="SELL"
+        elif liq_bull and tendencia_m15!="BEARISH": dr="BUY"
+        elif liq_bear and tendencia_m15!="BULLISH": dr="SELL"
+        elif tendencia_m15=="BULLISH": dr="BUY"
+        elif tendencia_m15=="BEARISH": dr="SELL"
+        elif bos_ok and t_h1=="BULLISH": dr="BUY"
+        elif bos_ok and t_h1=="BEARISH": dr="SELL"
         else:
             del d15; gc.collect()
             return {"par":nome,"score":0,"classificacao":"FRACO","emoji":"⚫","sinal":False,"dir":"","preco":preco_m15,"preco_m5":0,"sl":0,"tp1":0,"tp2":0,"rr":"","pips":0,"unidade":"pips","rsi":rsi,"tend_h1":t_h1,"tend_m15":tendencia_m15,"volume":volume,"atr":round(atr,5),"liq_ok":False,"bos_ok":bos_ok,"reteste_ok":False,"tipo_bos":tipo_bos,"tipo_reteste":"","ordem":"","nivel_liq":0,"sessao":s["sessao"],"operar":s["operar"],"raz":["Sem direcao clara"]}
