@@ -66,15 +66,15 @@ def fase1_h1(par):
         return "BULLISH" if p>e20 else "BEARISH"
     except: return "BULLISH"
 
-# FASE 2: Liquidez M15 — VARRIDA / PROXIMA / NAO OCORREU
-def fase2_liquidez(df):
+# FASE 2: Liquidez M15
+def fase2_liquidez(df, dr):
     try:
         df2=df.copy()
         df2["sh"]=((df2["High"]>df2["High"].shift(1))&(df2["High"]>df2["High"].shift(-1))&(df2["High"]>df2["High"].shift(2))&(df2["High"]>df2["High"].shift(-2)))
         df2["sl"]=((df2["Low"]<df2["Low"].shift(1))&(df2["Low"]<df2["Low"].shift(-1))&(df2["Low"]<df2["Low"].shift(2))&(df2["Low"]<df2["Low"].shift(-2)))
         sh=df2[df2["sh"]]["High"]
         sl=df2[df2["sl"]]["Low"]
-        if len(sh)<2 or len(sl)<2: return "NAO OCORREU",False,False,0,0
+        if len(sh)<2 or len(sl)<2: return "NAO OCORREU",False,0,0
         p=float(df["Close"].iloc[-1])
         h15=df["High"].tail(15)
         l15=df["Low"].tail(15)
@@ -82,41 +82,51 @@ def fase2_liquidez(df):
         usl1=float(sl.iloc[-1]); usl2=float(sl.iloc[-2])
         nivel_low=min(usl1,usl2)
         nivel_high=max(ush1,ush2)
-        liq_bull=(float(l15.min())<=usl1 or float(l15.min())<=usl2) and p>usl1
-        liq_bear=(float(h15.max())>=ush1 or float(h15.max())>=ush2) and p<ush1
-        prox_bull=abs(p-nivel_low)/nivel_low<0.003 if not liq_bull else False
-        prox_bear=abs(p-nivel_high)/nivel_high<0.003 if not liq_bear else False
-        if liq_bull or liq_bear: estado="VARRIDA"
-        elif prox_bull or prox_bear: estado="PROXIMA"
+        # Liquidez so e valida se alinhada com a direccao
+        if dr=="BUY":
+            # Bull: varreu fundo e voltou acima — confirma BUY
+            liq_ok=(float(l15.min())<=usl1 or float(l15.min())<=usl2) and p>usl1
+            prox=abs(p-nivel_low)/nivel_low<0.003 if not liq_ok else False
+        else:
+            # Bear: varreu topo e voltou abaixo — confirma SELL
+            liq_ok=(float(h15.max())>=ush1 or float(h15.max())>=ush2) and p<ush1
+            prox=abs(p-nivel_high)/nivel_high<0.003 if not liq_ok else False
+        if liq_ok: estado="VARRIDA"
+        elif prox: estado="PROXIMA"
         else: estado="NAO OCORREU"
-        return estado,liq_bull,liq_bear,round(nivel_low,5),round(nivel_high,5)
-    except: return "NAO OCORREU",False,False,0,0
+        nivel=nivel_low if dr=="BUY" else nivel_high
+        return estado,liq_ok,nivel,0
+    except: return "NAO OCORREU",False,0,0
 
-# FASE 3: BOS/CHoCH M15 — sempre mostra estado real
-def fase3_bos(df):
+# FASE 3: BOS/CHoCH M15
+def fase3_bos(df, dr):
     try:
         df2=df.copy()
         df2["sh"]=((df2["High"]>df2["High"].shift(1))&(df2["High"]>df2["High"].shift(-1))&(df2["High"]>df2["High"].shift(2))&(df2["High"]>df2["High"].shift(-2))&(df2["High"]>df2["High"].shift(3))&(df2["High"]>df2["High"].shift(-3)))
         df2["sl"]=((df2["Low"]<df2["Low"].shift(1))&(df2["Low"]<df2["Low"].shift(-1))&(df2["Low"]<df2["Low"].shift(2))&(df2["Low"]<df2["Low"].shift(-2))&(df2["Low"]<df2["Low"].shift(3))&(df2["Low"]<df2["Low"].shift(-3)))
         sh=df2[df2["sh"]]["High"]
         sl=df2[df2["sl"]]["Low"]
-        if len(sh)<3 or len(sl)<3: return False,False,"SEM ESTRUTURA","NEUTRO"
+        if len(sh)<3 or len(sl)<3: return False,False,"AGUARDA"
         ush=sh.iloc[-1]; psh=sh.iloc[-2]
         usl=sl.iloc[-1]; psl=sl.iloc[-2]
         p=df["Close"].iloc[-1]; pp=df["Close"].iloc[-2]
         bos_bull=(p>ush)and(pp>ush)
         bos_bear=(p<usl)and(pp<usl)
         hh=ush>psh; hl=usl>psl; lh=ush<psh; ll=usl<psl
-        t="BULLISH" if(hh and hl)else "BEARISH" if(lh and ll)else "NEUTRO"
         choch_bull=(lh and ll)and bos_bull
         choch_bear=(hh and hl)and bos_bear
-        bos_ok=bos_bull or bos_bear
-        choch_ok=choch_bull or choch_bear
+        # Valida BOS na direccao correcta
+        if dr=="BUY":
+            bos_ok=bos_bull
+            choch_ok=choch_bull
+        else:
+            bos_ok=bos_bear
+            choch_ok=choch_bear
         if choch_ok: tipo="CHoCH"
         elif bos_ok: tipo="BOS"
         else: tipo="AGUARDA"
-        return bos_ok,choch_ok,tipo,t
-    except: return False,False,"AGUARDA","NEUTRO"
+        return bos_ok,choch_ok,tipo
+    except: return False,False,"AGUARDA"
 
 # FASE 4: Volume
 def fase4_volume(df, par):
@@ -135,7 +145,7 @@ def fase4_volume(df, par):
             else: return "FRACO",False
     except: return "MEDIO",False
 
-# FASE 5: Reteste M5 — CONFIRMADO / AGUARDA / NAO OCORREU
+# FASE 5: Reteste M5
 def fase5_reteste_m5(par, dr):
     try:
         d=obter_dados(par,"5m","2d")
@@ -148,12 +158,12 @@ def fase5_reteste_m5(par, dr):
         u=d.iloc[-1]
         corpo=float(u["corpo"]); media=float(u["media_corpo"])
         e20=float(d["ema20"].iloc[-1])
+        # Vela de confirmacao na direccao correcta
         if dr=="BUY":
-            vela_ok=float(u["Close"])>float(u["Open"]) and corpo>media*0.8
-            alinhado=preco>e20
+            vela_ok=float(u["Close"])>float(u["Open"]) and corpo>media*0.8 and preco>e20
         else:
-            vela_ok=float(u["Close"])<float(u["Open"]) and corpo>media*0.8
-            alinhado=preco<e20
+            vela_ok=float(u["Close"])<float(u["Open"]) and corpo>media*0.8 and preco<e20
+        # BOS no M5 na direccao correcta
         df2=d.copy()
         df2["sh"]=((df2["High"]>df2["High"].shift(1))&(df2["High"]>df2["High"].shift(-1))&(df2["High"]>df2["High"].shift(2))&(df2["High"]>df2["High"].shift(-2)))
         df2["sl"]=((df2["Low"]<df2["Low"].shift(1))&(df2["Low"]<df2["Low"].shift(-1))&(df2["Low"]<df2["Low"].shift(2))&(df2["Low"]<df2["Low"].shift(-2)))
@@ -162,7 +172,8 @@ def fase5_reteste_m5(par, dr):
         if len(sh)>=2 and len(sl)>=2:
             ush=float(sh.iloc[-1]); usl=float(sl.iloc[-1])
             p=float(d["Close"].iloc[-1]); pp=float(d["Close"].iloc[-2])
-            bos_m5=(p>ush and pp>ush and dr=="BUY") or (p<usl and pp<usl and dr=="SELL")
+            if dr=="BUY": bos_m5=(p>ush)and(pp>ush)
+            else: bos_m5=(p<usl)and(pp<usl)
         confirmado=vela_ok or bos_m5
         estado="CONFIRMADO" if confirmado else "AGUARDA"
         del d,df2; gc.collect()
@@ -186,11 +197,13 @@ def calc_risco(preco, dr, high_m5, low_m5, atr, par):
         if sl>=p: sl=round(p-a,5)
         risco=abs(p-sl)
         tp1=round(p+risco*2,5); tp2=round(p+risco*4,5)
+        if tp1<=p: tp1=round(p+a,5)
     else:
         sl=round(high_m5+a*mult,5) if high_m5>0 else round(p+a*1.5,5)
         if sl<=p: sl=round(p+a,5)
         risco=abs(sl-p)
         tp1=round(p-risco*2,5); tp2=round(p-risco*4,5)
+        if tp1>=p: tp1=round(p-a,5)
     r=abs(p-sl)
     pips=round(r,2) if eh_ouro else round(r*10000,1)
     unidade="USD" if eh_ouro else "pips"
@@ -201,49 +214,77 @@ def analisar(par, ignorar_sessao=False):
         nome=nomes.get(par,par.replace("=X","").replace("=F",""))
         s=sessao_activa()
         sessao_ok=s["operar"] if not ignorar_sessao else True
+
+        # Carrega M15
         d15=obter_dados(par,"15m","7d")
-        if len(d15)<30:
-            gc.collect()
-            return None
+        if len(d15)<30: gc.collect(); return None
         d15=adicionar_indicadores(d15)
-        if len(d15)<10:
-            gc.collect()
-            return None
+        if len(d15)<10: gc.collect(); return None
+
         preco_m15=round(float(d15["Close"].iloc[-1]),5)
         rsi=round(float(d15["rsi"].iloc[-1]),1)
         atr=float(d15["atr"].iloc[-1])
+
+        # FASE 1: H1 — define tendencia principal
         t_h1=fase1_h1(par)
-        liq_estado,liq_bull,liq_bear,nivel_low,nivel_high=fase2_liquidez(d15)
-        bos_ok,choch_ok,tipo_bos,tend_m15=fase3_bos(d15)
-        volume,vol_forte=fase4_volume(d15,par)
-        e20_m15=float(d15["ema20"].iloc[-1])
+
+        # M15 tendencia
         p_m15=float(d15["Close"].iloc[-1])
-        tend_m15_ema="BULLISH" if p_m15>e20_m15 else "BEARISH"
-        if tend_m15=="NEUTRO": tend_m15=tend_m15_ema
-        liq_ok=liq_bull or liq_bear
-        if liq_bull: dr="BUY"
-        elif liq_bear: dr="SELL"
-        elif tend_m15=="BULLISH" and t_h1=="BULLISH": dr="BUY"
-        elif tend_m15=="BEARISH" and t_h1=="BEARISH": dr="SELL"
+        e20_m15=float(d15["ema20"].iloc[-1])
+        tend_m15="BULLISH" if p_m15>e20_m15 else "BEARISH"
+
+        # DIRECCAO: H1 e M15 devem estar alinhados
+        # Se alinhados usa essa direccao
+        # Se desalinhados usa H1 como dominante
+        if t_h1=="BULLISH" and tend_m15=="BULLISH": dr="BUY"
+        elif t_h1=="BEARISH" and tend_m15=="BEARISH": dr="SELL"
         elif t_h1=="BULLISH": dr="BUY"
         else: dr="SELL"
+
+        # FASES 2-5 com direccao correcta
+        liq_estado,liq_ok,nivel_liq,_=fase2_liquidez(d15,dr)
+        bos_ok,choch_ok,tipo_bos=fase3_bos(d15,dr)
+        volume,vol_forte=fase4_volume(d15,par)
         ret_estado,reteste_ok,preco_m5,high_m5,low_m5=fase5_reteste_m5(par,dr)
+
         preco_entrada=preco_m5 if reteste_ok and preco_m5>0 else preco_m15
+
+        # PONTUACAO
         score=0; raz=[]
+
+        # 3 OBRIGATORIOS (50 pts)
         if liq_ok: score+=20; raz.append("Liquidez varrida +20")
         if bos_ok: score+=15; raz.append(tipo_bos+" M15 +15")
-        if reteste_ok: score+=15; raz.append("Reteste M5 confirmado +15")
-        if t_h1==dr: score+=20; raz.append("H1 alinhado +20")
-        elif t_h1!=dr: score+=0; raz.append("H1 contra direcao")
+        if reteste_ok: score+=15; raz.append("Reteste M5 +15")
+
+        # QUALIDADE (50 pts)
+        h1_alinhado=t_h1==dr
+        m15_alinhado=tend_m15==dr
+        if h1_alinhado and m15_alinhado:
+            score+=20; raz.append("H1+M15 alinhados +20")
+        elif h1_alinhado:
+            score+=10; raz.append("H1 alinhado +10")
         if volume=="FORTE": score+=15; raz.append("Volume forte +15")
         elif volume=="MEDIO": score+=8; raz.append("Volume medio +8")
         if sessao_ok: score+=s["score_bonus"]; raz.append("Sessao "+s["sessao"])
         if choch_ok: score+=5; raz.append("CHoCH +5")
+
         classificacao,emoji=classificar(score)
         ordem=tipo_ordem(reteste_ok,liq_estado,vol_forte,dr)
         r=calc_risco(preco_entrada,dr,high_m5,low_m5,atr,par)
+
+        # Sinal: 3 obrigatorios + score >= 60
         sinal=liq_ok and bos_ok and reteste_ok and score>=60 and r["pips"]>0
-        result={"par":nome,"score":score,"classificacao":classificacao,"emoji":emoji,"sinal":sinal,"dir":dr,"preco":preco_entrada,"preco_m15":preco_m15,"preco_m5":preco_m5,"sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"rr":r["rr"],"pips":r["pips"],"unidade":r["unidade"],"rsi":rsi,"tend_h1":t_h1,"tend_m15":tend_m15,"volume":volume,"atr":round(atr,5),"liq_estado":liq_estado,"liq_ok":liq_ok,"bos_ok":bos_ok,"tipo_bos":tipo_bos,"ret_estado":ret_estado,"reteste_ok":reteste_ok,"ordem":ordem,"nivel_low":nivel_low,"nivel_high":nivel_high,"sessao":s["sessao"],"operar":s["operar"],"raz":raz}
+
+        result={
+            "par":nome,"score":score,"classificacao":classificacao,"emoji":emoji,
+            "sinal":sinal,"dir":dr,"preco":preco_entrada,"preco_m15":preco_m15,"preco_m5":preco_m5,
+            "sl":r["sl"],"tp1":r["tp1"],"tp2":r["tp2"],"rr":r["rr"],"pips":r["pips"],"unidade":r["unidade"],
+            "rsi":rsi,"tend_h1":t_h1,"tend_m15":tend_m15,"volume":volume,"atr":round(atr,5),
+            "liq_estado":liq_estado,"liq_ok":liq_ok,"nivel_liq":nivel_liq,
+            "bos_ok":bos_ok,"tipo_bos":tipo_bos,"ret_estado":ret_estado,"reteste_ok":reteste_ok,
+            "ordem":ordem,"sessao":s["sessao"],"operar":s["operar"],"raz":raz
+        }
         del d15; gc.collect()
         return result
     except:
@@ -282,7 +323,12 @@ def enviar_email_sinal(sinal):
             "Risco: "+str(sinal["pips"])+" "+sinal["unidade"]+chr(10)+chr(10)+
             chr(10).join(sinal["raz"])
         )
-        resend.Emails.send({"from":"onboarding@resend.dev","to":email_destino,"subject":sinal["emoji"]+" "+sinal["par"]+" "+sinal["dir"]+" | "+sinal["ordem"]+" @ "+str(sinal["preco"])+" | "+str(sinal["score"])+"% "+str(sinal["classificacao"]),"text":corpo})
+        resend.Emails.send({
+            "from":"onboarding@resend.dev",
+            "to":email_destino,
+            "subject":sinal["emoji"]+" "+sinal["par"]+" "+sinal["dir"]+" | "+sinal["ordem"]+" @ "+str(sinal["preco"])+" | "+str(sinal["score"])+"% "+str(sinal["classificacao"]),
+            "text":corpo
+        })
     except: pass
 
 sinais_enviados=set()
@@ -310,7 +356,11 @@ def grafico(par, dr, nivel, preco_entrada):
         if len(d)<10: return None
         d=adicionar_indicadores(d)
         df=d.tail(60)
-        fig=go.Figure(go.Candlestick(x=df.index,open=df["Open"],high=df["High"],low=df["Low"],close=df["Close"],name=par,increasing_line_color="#26a69a",decreasing_line_color="#ef5350"))
+        fig=go.Figure(go.Candlestick(
+            x=df.index,open=df["Open"],high=df["High"],
+            low=df["Low"],close=df["Close"],name=par,
+            increasing_line_color="#26a69a",decreasing_line_color="#ef5350"
+        ))
         if "ema20" in df.columns: fig.add_trace(go.Scatter(x=df.index,y=df["ema20"],name="EMA20",line=dict(color="orange",width=1)))
         if "ema50" in df.columns: fig.add_trace(go.Scatter(x=df.index,y=df["ema50"],name="EMA50",line=dict(color="blue",width=1)))
         if "ema100" in df.columns: fig.add_trace(go.Scatter(x=df.index,y=df["ema100"],name="EMA100",line=dict(color="red",width=1)))
@@ -350,7 +400,10 @@ if st.button("Analisar mercado",type="primary"):
     if sinais:
         st.success(str(len(sinais))+" SINAL(IS) ENCONTRADO(S)!")
         for s in sinais:
-            with st.expander(s["emoji"]+" "+s["par"]+" "+s["dir"]+" | "+s["ordem"]+" @ "+str(s["preco"])+" | "+str(s["score"])+"% "+str(s["classificacao"]),expanded=True):
+            with st.expander(
+                s["emoji"]+" "+s["par"]+" "+s["dir"]+" | "+s["ordem"]+" @ "+str(s["preco"])+" | "+str(s["score"])+"% "+str(s["classificacao"]),
+                expanded=True
+            ):
                 st.markdown("### "+s["emoji"]+" "+s["par"]+" — "+s["dir"]+" — "+str(s["classificacao"]))
                 c1,c2,c3,c4=st.columns(4)
                 c1.metric("Tipo Ordem",s["ordem"])
@@ -375,8 +428,7 @@ if st.button("Analisar mercado",type="primary"):
                 st.caption("R:R "+s["rr"]+" | ATR: "+str(s["atr"]))
                 st.caption(" | ".join(s["raz"]))
                 par_key=[p for p in pares if nomes.get(p,"")==s["par"]]
-                nivel=s["nivel_low"] if s["dir"]=="BUY" else s["nivel_high"]
-                fig=grafico(par_key[0] if par_key else s["par"],s["dir"],nivel,s["preco"])
+                fig=grafico(par_key[0] if par_key else s["par"],s["dir"],s.get("nivel_liq",0),s["preco"])
                 if fig: st.plotly_chart(fig,use_container_width=True)
     else:
         st.info("Sem sinais. Aguarda: Liquidez VARRIDA + BOS/CHoCH + Reteste M5 CONFIRMADO.")
