@@ -454,7 +454,7 @@ if st.button("Analisar mercado",type="primary"):
                 c1b.metric("Stop Loss",s["sl"])
                 c2b.metric("TP1",s["tp1"])
                 c3b.metric("TP2",s["tp2"])
-                c4b.metric("Risco",str(s["pips"])+" "+s["unidade"]))
+                c4b.metric("Risco",str(s["pips"])+" "+s["unidade"])
                 c1c,c2c,c3c,c4c=st.columns(4)
                 c1c.metric("H1",s["tend_h1"])
                 c2c.metric("M15",s["tend_m15"])
