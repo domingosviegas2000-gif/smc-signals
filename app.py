@@ -374,7 +374,7 @@ def analisar(par, ignorar_sessao=False):
         volume, vol_forte = fase4_volume(d15, par)
         ret_estado, reteste_ok, preco_m5, high_m5, low_m5 = fase5_reteste_m5(par, dr, bos_ok)
         
-        preco_entrada = preco_m5 if reteste_ok and preco_m5 > 0 else preco_m15
+        preco_entrada = preco_m15
         
         score = 0
         raz = []
@@ -416,7 +416,7 @@ def analisar(par, ignorar_sessao=False):
         
         classificacao, emoji = classificar(score)
         ordem = tipo_ordem(reteste_ok, liq_estado, vol_forte, dr)
-        r = calc_risco(preco_entrada, dr, high_m5, low_m5, atr, par)
+        r = calc_risco(preco_entrada, dr, 0, 0, atr, par)
         
         sinal = liq_ok and bos_ok and reteste_ok and score >= 60 and r["pips"] > 0
         
