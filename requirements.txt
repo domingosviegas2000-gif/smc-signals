@@ -5,3 +5,4 @@ numpy
 ta
 plotly
 resend
+requests
