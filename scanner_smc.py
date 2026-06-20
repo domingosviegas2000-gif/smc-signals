@@ -6,8 +6,8 @@ import ta
 import gc
 from datetime import datetime, timezone, timedelta
 
-pares_smc = ["EURUSD=X","GBPUSD=X","USDJPY=X","GC=F"]
-nomes_smc = {"EURUSD=X":"EURUSD","GBPUSD=X":"GBPUSD","USDJPY=X":"USDJPY","GC=F":"XAUUSD"}
+pares_smc = ["EURUSD=X","GBPUSD=X","USDJPY=X","GC=F","BTC-USD"]
+nomes_smc = {"EURUSD=X":"EURUSD","GBPUSD=X":"GBPUSD","USDJPY=X":"USDJPY","GC=F":"XAUUSD","BTC-USD":"BTCUSD"}
 
 def obter_dados_smc(par, intervalo="15m", periodo="7d"):
     try:
@@ -24,7 +24,9 @@ def add_ind_smc(df):
     return df.dropna()
 
 def precisao(par):
-    return 2 if "GC" in par else 5
+    if "GC" in par: return 2
+    if "BTC" in par: return 0
+    return 5
 
 # ==================== ESTRUTURA: BOS/CHoCH/HH/HL/LH/LL ====================
 def detectar_estrutura_completa(df, par):
@@ -293,3 +295,91 @@ def escanear_par(par):
     except:
         gc.collect()
         return None
+
+def gerar_recomendacao_entrada(r):
+    """Gera recomendacao de tipo de ordem e vela esperada baseado no estado actual do par"""
+    recomendacoes = []
+
+    estrutura_recente = r["estrutura_m15"]
+    tem_choch = any(e["tipo"] in ["CHOCH_BULL","CHOCH_BEAR"] for e in estrutura_recente)
+    tem_bos = any(e["tipo"] in ["BOS_BULL","BOS_BEAR"] for e in estrutura_recente)
+
+    ob_validos = [o for o in (r["ob_m15"]+r["ob_h1"]) if o["valido"]]
+    fvg_abertos = [f for f in (r["fvg_m5"]+r["fvg_m15"]) if f["estado"] in ["ABERTO","PARCIAL"]]
+
+    # Cenario 1: CHoCH + OB disponivel = reversao
+    if tem_choch and ob_validos:
+        ob = ob_validos[0]
+        direcao = "BUY" if ob["tipo"]=="BULLISH_OB" else "SELL"
+        vela = "Bullish Engulfing ou Pin Bar de alta" if direcao=="BUY" else "Bearish Engulfing ou Pin Bar de baixa"
+        recomendacoes.append({
+            "cenario": "REVERSAO (CHoCH)",
+            "direcao": direcao,
+            "ordem": "BUY LIMIT" if direcao=="BUY" else "SELL LIMIT",
+            "zona_entrada": f"{ob['baixo']} - {ob['alto']}",
+            "vela_esperada": vela,
+            "sl_sugerido": f"Abaixo de {ob['baixo']}" if direcao=="BUY" else f"Acima de {ob['alto']}",
+            "prioridade": "ALTA" if ob["forca"]>=85 else "MEDIA"
+        })
+
+    # Cenario 2: BOS + OB na mesma direcao = continuacao
+    if tem_bos and ob_validos:
+        bos_dir = None
+        for e in estrutura_recente:
+            if e["tipo"]=="BOS_BULL": bos_dir="BUY"
+            elif e["tipo"]=="BOS_BEAR": bos_dir="SELL"
+        if bos_dir:
+            obs_alinhados = [o for o in ob_validos if (o["tipo"]=="BULLISH_OB" and bos_dir=="BUY") or (o["tipo"]=="BEARISH_OB" and bos_dir=="SELL")]
+            if obs_alinhados:
+                ob = obs_alinhados[0]
+                vela = "Bullish Pin Bar ou vela de retomada" if bos_dir=="BUY" else "Bearish Pin Bar ou vela de retomada"
+                recomendacoes.append({
+                    "cenario": "CONTINUACAO (BOS)",
+                    "direcao": bos_dir,
+                    "ordem": "BUY LIMIT" if bos_dir=="BUY" else "SELL LIMIT",
+                    "zona_entrada": f"{ob['baixo']} - {ob['alto']}",
+                    "vela_esperada": vela,
+                    "sl_sugerido": f"Abaixo de {ob['baixo']}" if bos_dir=="BUY" else f"Acima de {ob['alto']}",
+                    "prioridade": "ALTA" if ob["forca"]>=85 else "MEDIA"
+                })
+
+    # Cenario 3: FVG aberto sem CHoCH/BOS recente = correcao/reteste
+    if fvg_abertos and not tem_choch and not tem_bos:
+        fvg = fvg_abertos[0]
+        direcao = "BUY" if fvg["tipo"]=="BULLISH_FVG" else "SELL"
+        vela = "Vela de rejeicao na base do gap" if direcao=="BUY" else "Vela de rejeicao no topo do gap"
+        recomendacoes.append({
+            "cenario": "CORRECAO / RETESTE (FVG)",
+            "direcao": direcao,
+            "ordem": "MARKET ORDER (apos confirmacao)",
+            "zona_entrada": f"{fvg['base']} - {fvg['topo']}",
+            "vela_esperada": vela,
+            "sl_sugerido": f"Abaixo de {fvg['base']}" if direcao=="BUY" else f"Acima de {fvg['topo']}",
+            "prioridade": "MEDIA" if fvg["estado"]=="ABERTO" else "BAIXA"
+        })
+
+    # Cenario 4: Liquidez proxima sem grab ainda = aguardar
+    liq = r["liquidez"]
+    if not liq["bsl_capturada"] and not liq["ssl_capturada"] and not recomendacoes:
+        recomendacoes.append({
+            "cenario": "AGUARDAR LIQUIDEZ",
+            "direcao": "N/D",
+            "ordem": "NENHUMA — aguardar",
+            "zona_entrada": f"BSL: {liq['bsl']} | SSL: {liq['ssl']}",
+            "vela_esperada": "Aguardar varredura de liquidez antes de qualquer entrada",
+            "sl_sugerido": "N/D",
+            "prioridade": "AGUARDAR"
+        })
+
+    if not recomendacoes:
+        recomendacoes.append({
+            "cenario": "SEM SETUP CLARO",
+            "direcao": "N/D",
+            "ordem": "NENHUMA",
+            "zona_entrada": "N/D",
+            "vela_esperada": "Aguardar nova marcacao",
+            "sl_sugerido": "N/D",
+            "prioridade": "AGUARDAR"
+        })
+
+    return recomendacoes

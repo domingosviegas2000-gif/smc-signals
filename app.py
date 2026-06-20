@@ -12,7 +12,7 @@ import requests
 from datetime import datetime, timezone
 import sys
 sys.path.insert(0, "/app")
-from scanner_smc import escanear_par, pares_smc, nomes_smc
+from scanner_smc import escanear_par, pares_smc, nomes_smc, gerar_recomendacao_entrada
 
 try:
     import resend
@@ -359,6 +359,21 @@ else:
             c2.metric("Order Blocks Validos", r["ob_validos"])
             c3.metric("FVGs Abertos", r["fvg_abertos"])
             c4.metric("Liquidez Nao Capturada", r["liq_nao_capturada"])
+
+            recomendacoes = gerar_recomendacao_entrada(r)
+            st.markdown("### 🎯 Recomendacao de Entrada")
+            for rec in recomendacoes:
+                cor = "🟢" if rec["prioridade"]=="ALTA" else "🟡" if rec["prioridade"]=="MEDIA" else "🔵" if rec["prioridade"]=="BAIXA" else "⚪"
+                with st.container():
+                    st.markdown(f"{cor} **{rec['cenario']}** — Prioridade: {rec['prioridade']}")
+                    c1,c2,c3 = st.columns(3)
+                    c1.metric("Direccao", rec["direcao"])
+                    c2.metric("Tipo Ordem", rec["ordem"])
+                    c3.metric("Zona Entrada", rec["zona_entrada"])
+                    st.caption(f"**Vela esperada:** {rec['vela_esperada']}")
+                    st.caption(f"**SL sugerido:** {rec['sl_sugerido']}")
+                    st.divider()
+
 
             with st.expander("📐 Estrutura (M15 + M5)", expanded=False):
                 if r["estrutura_m15"]:
