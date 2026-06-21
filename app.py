@@ -12,7 +12,7 @@ import requests
 from datetime import datetime, timezone
 import sys
 sys.path.insert(0, "/app")
-from scanner_smc import escanear_par, pares_smc, nomes_smc, gerar_recomendacao_entrada
+from scanner_smc import escanear_par, pares_smc, nomes_smc
 
 try:
     import resend
@@ -339,9 +339,26 @@ if pagina == "🥇 Sinal XAUUSD":
 
 # ==================== PAGINA 2: SCANNER SMC ====================
 else:
-    st.title("🔍 Scanner SMC — Marcacao Institucional")
-    st.caption("EURUSD | GBPUSD | USDJPY | XAUUSD | Apenas marcacao, sem sinais de compra/venda")
+    st.title("Scanner SMC — Mapa Institucional")
+    st.caption("EURUSD | GBPUSD | USDJPY | XAUUSD | BTCUSD | Leitura pura de estrutura e liquidez, sem sugestao de trade")
     st.divider()
+
+    with st.expander("Como ler este scanner", expanded=False):
+        st.markdown("""
+**Este scanner mostra apenas o que o mercado esta a fazer. Nao sugere compra nem venda.**
+
+**Estrutura:** mostra topos e fundos (HH, HL, LH, LL) e os momentos em que a estrutura foi rompida (Rompimento de Estrutura) ou mudou de carater (Mudanca de Carater).
+
+**Liquidez:** BSL e SSL sao os niveis onde existe liquidez acumulada acima e abaixo do preco. Quando o preco passa por esses niveis e volta, a liquidez foi varrida.
+
+**Blocos de Ordem:** zonas onde instituicoes deixaram ordens por executar. Quanto maior a forca, menos vezes a zona foi testada.
+
+**Gap de Valor Justo (FVG):** zonas de desequilibrio de preco em H1, M15 e M5. Um gap aberto tende a ser revisitado pelo preco.
+
+**Fase de Mercado:** classificacao neutra do momento actual — Expansao (tendencia em curso), Manipulacao (varredura de liquidez), Transicao (possivel mudanca) ou Correcao (preco em zona institucional).
+
+A leitura e decisao de entrada e sempre tua.
+        """)
 
     if st.button("Escanear mercado", type="primary"):
         resultados = []
@@ -353,89 +370,74 @@ else:
             gc.collect()
 
         for r in resultados:
-            st.markdown("## "+r["par"])
+            st.markdown("## " + r["par"])
             c1,c2,c3,c4 = st.columns(4)
             c1.metric("Tendencia H1", r["tend_h1"])
-            c2.metric("Order Blocks Validos", r["ob_validos"])
-            c3.metric("FVGs Abertos", r["fvg_abertos"])
-            c4.metric("Liquidez Nao Capturada", r["liq_nao_capturada"])
+            c2.metric("Tendencia M15", r["tend_m15"])
+            c3.metric("Tendencia M5", r["tend_m5"])
+            c4.metric("Blocos Validos", r["ob_validos"])
 
-            recomendacoes = gerar_recomendacao_entrada(r)
-            st.markdown("### 🎯 Recomendacao de Entrada")
-            for rec in recomendacoes:
-                cor = "🟢" if rec["prioridade"]=="ALTA" else "🟡" if rec["prioridade"]=="MEDIA" else "🔵" if rec["prioridade"]=="BAIXA" else "⚪"
-                with st.container():
-                    st.markdown(f"{cor} **{rec['cenario']}** — Prioridade: {rec['prioridade']}")
-                    c1,c2,c3 = st.columns(3)
-                    c1.metric("Direccao", rec["direcao"])
-                    c2.metric("Tipo Ordem", rec["ordem"])
-                    c3.metric("Zona Entrada", rec["zona_entrada"])
-                    st.caption(f"**Vela esperada:** {rec['vela_esperada']}")
-                    st.caption(f"**SL sugerido:** {rec['sl_sugerido']}")
-                    st.divider()
+            st.info("Fase de Mercado: " + r["fase_mercado"])
 
-
-            with st.expander("📐 Estrutura (M15 + M5)", expanded=False):
+            with st.expander("Estrutura (M15 + M5)", expanded=False):
                 if r["estrutura_m15"]:
                     st.markdown("**M15:**")
                     for e in r["estrutura_m15"]:
                         hora_str = e["hora"].strftime("%H:%M") if hasattr(e["hora"],"strftime") else str(e["hora"])
-                        st.write(f"{e['tipo']} — Preco: {e['preco']} — Hora: {hora_str}")
+                        st.write(e["tipo"] + " — Preco: " + str(e["preco"]) + " — Hora: " + hora_str)
                 if r["estrutura_m5"]:
                     st.markdown("**M5:**")
                     for e in r["estrutura_m5"]:
                         hora_str = e["hora"].strftime("%H:%M") if hasattr(e["hora"],"strftime") else str(e["hora"])
-                        st.write(f"{e['tipo']} — Preco: {e['preco']} — Hora: {hora_str}")
+                        st.write(e["tipo"] + " — Preco: " + str(e["preco"]) + " — Hora: " + hora_str)
                 if not r["estrutura_m15"] and not r["estrutura_m5"]:
                     st.write("Sem estrutura relevante no momento")
 
-            with st.expander("💧 Liquidez", expanded=False):
+            with st.expander("Liquidez", expanded=False):
                 liq = r["liquidez"]
                 c1,c2 = st.columns(2)
-                c1.write(f"**BSL:** {liq['bsl']} {'(CAPTURADA)' if liq['bsl_capturada'] else ''}")
-                c2.write(f"**SSL:** {liq['ssl']} {'(CAPTURADA)' if liq['ssl_capturada'] else ''}")
-                if liq["eqh"]: st.write(f"**EQH:** {liq['eqh']}")
-                if liq["eql"]: st.write(f"**EQL:** {liq['eql']}")
-                if liq["grab_topo"]: st.write("⚠️ Liquidity Grab no topo detectado")
-                if liq["grab_fundo"]: st.write("⚠️ Liquidity Grab no fundo detectado")
+                c1.write("**BSL (liquidez acima):** " + str(liq["bsl"]) + (" — VARRIDA" if liq["bsl_varrida"] else ""))
+                c2.write("**SSL (liquidez abaixo):** " + str(liq["ssl"]) + (" — VARRIDA" if liq["ssl_varrida"] else ""))
+                if liq["eqh"]: st.write("**EQH (topos iguais):** " + str(liq["eqh"]))
+                if liq["eql"]: st.write("**EQL (fundos iguais):** " + str(liq["eql"]))
+                if liq["grab_topo"]: st.write("Varredura de liquidez detectada no topo")
+                if liq["grab_fundo"]: st.write("Varredura de liquidez detectada no fundo")
 
-            with st.expander("📦 Order Blocks", expanded=True):
+            with st.expander("Blocos de Ordem", expanded=True):
                 obs = [o for o in (r["ob_m15"]+r["ob_h1"]) if o["valido"]]
                 if obs:
                     for ob in obs:
-                        tipo_nome = "Bullish OB" if ob["tipo"]=="BULLISH_OB" else "Bearish OB"
-                        st.markdown(f"**{tipo_nome} ({ob['tf']})**")
-                        st.write(f"Alto: {ob['alto']} | Baixo: {ob['baixo']}")
-                        st.write(f"Criado: {ob['hora_criacao'].strftime('%H:%M') if hasattr(ob['hora_criacao'],'strftime') else ob['hora_criacao']} | Idade: {ob['idade']} | Testes: {ob['testes']}")
-                        st.write(f"Estado: VALIDO ✅ | Forca: {ob['forca']}%")
+                        st.markdown("**" + ob["tipo"] + " (" + ob["tf"] + ")**")
+                        st.write("Alto: " + str(ob["alto"]) + " | Baixo: " + str(ob["baixo"]))
+                        hora_c = ob["hora_criacao"].strftime("%H:%M") if hasattr(ob["hora_criacao"],"strftime") else str(ob["hora_criacao"])
+                        st.write("Criado: " + hora_c + " | Idade: " + ob["idade"] + " | Testes: " + str(ob["testes"]))
+                        st.write("Estado: VALIDO | Forca: " + str(ob["forca"]) + "%")
                         st.divider()
                 else:
-                    st.write("Nenhum Order Block valido (forca >= 70%) no momento")
+                    st.write("Nenhum bloco de ordem valido (forca >= 70%) no momento")
 
-            with st.expander("📊 Fair Value Gap", expanded=True):
-                fvgs = [f for f in (r["fvg_m5"]+r["fvg_m15"])]
+            with st.expander("Gap de Valor Justo (H1 + M15 + M5)", expanded=True):
+                fvgs = r["fvg_h1"] + r["fvg_m15"] + r["fvg_m5"]
                 if fvgs:
                     for f in fvgs:
-                        tipo_nome = "Bullish FVG" if f["tipo"]=="BULLISH_FVG" else "Bearish FVG"
-                        emoji_estado = "✅" if f["estado"]=="ABERTO" else "⚠️"
-                        st.markdown(f"**{tipo_nome} ({f['tf']})**")
-                        st.write(f"Topo: {f['topo']} | Base: {f['base']}")
-                        st.write(f"Estado: {f['estado']} {emoji_estado} | Idade: {f['idade']}")
+                        st.markdown("**" + f["tipo"] + " (" + f["tf"] + ")**")
+                        st.write("Topo: " + str(f["topo"]) + " | Base: " + str(f["base"]))
+                        st.write("Estado: " + f["estado"] + " | Idade: " + f["idade"])
                         st.divider()
                 else:
-                    st.write("Nenhum FVG relevante no momento")
+                    st.write("Nenhum gap relevante no momento")
 
-            with st.expander("🏛️ Niveis Institucionais", expanded=False):
+            with st.expander("Niveis Institucionais", expanded=False):
                 niv = r["niveis"]
                 c1,c2 = st.columns(2)
-                c1.write(f"**PDH (Previous Day High):** {niv['pdh']}")
-                c1.write(f"**PDL (Previous Day Low):** {niv['pdl']}")
-                c2.write(f"**PWH (Previous Week High):** {niv['pwh']}")
-                c2.write(f"**PWL (Previous Week Low):** {niv['pwl']}")
+                c1.write("**PDH (Maxima do dia anterior):** " + str(niv["pdh"]))
+                c1.write("**PDL (Minima do dia anterior):** " + str(niv["pdl"]))
+                c2.write("**PWH (Maxima da semana anterior):** " + str(niv["pwh"]))
+                c2.write("**PWL (Minima da semana anterior):** " + str(niv["pwl"]))
 
             st.divider()
             st.divider()
     else:
-        st.info("Clica em 'Escanear mercado' para marcar as zonas institucionais dos 4 pares.")
+        st.info("Clica em 'Escanear mercado' para mapear a estrutura institucional dos 5 pares.")
 
-    st.caption("Actualizado: "+datetime.now().strftime("%H:%M:%S")+" | Apenas marcacao SMC — sem sinais de entrada")
+    st.caption("Actualizado: " + datetime.now().strftime("%H:%M:%S") + " | Apenas leitura SMC — sem sugestao de entrada")
