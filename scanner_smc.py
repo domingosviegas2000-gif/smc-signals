@@ -119,7 +119,8 @@ def detectar_estrutura(df, par):
         tipo="CHoCH" if choch else "BOS"
         pontos.append({"tipo":tipo+" BAIXA","preco":round(p,p_round),"hora":df.index[-1]})
     if choch: estado="REVERSAO"
-    elif bos: estado="EXPANSAO"
+    elif bos and estrutura in ["ALTA","BAIXA"]: estado="EXPANSAO"
+    elif bos and estrutura in ["TRANSICAO","CONSOLIDACAO","INDEFINIDA"]: estado="INDEFINIDO"
     elif estrutura in ["ALTA","BAIXA"]: estado="CORRECAO"
     else: estado="INDEFINIDO"
     return {"estrutura":estrutura,"estado":estado,"pontos":pontos,"bos":bos,"choch":choch,

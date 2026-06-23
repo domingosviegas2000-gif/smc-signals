@@ -379,7 +379,19 @@ else:
 **Liquidez:** BSL varrida quando High supera o nivel. SSL varrida quando Low fica abaixo do nivel.
         """)
 
-    if st.button("Escanear mercado", type="primary"):
+    # Actualizacao automatica
+    intervalo_auto = st.selectbox("Actualizacao automatica:", ["Manual","5 minutos","10 minutos","30 minutos"], index=0)
+    if intervalo_auto == "5 minutos":
+        import streamlit.components.v1 as components
+        components.html("<script>setTimeout(function(){window.location.reload()}, 300000);</script>", height=0)
+    elif intervalo_auto == "10 minutos":
+        import streamlit.components.v1 as components
+        components.html("<script>setTimeout(function(){window.location.reload()}, 600000);</script>", height=0)
+    elif intervalo_auto == "30 minutos":
+        import streamlit.components.v1 as components
+        components.html("<script>setTimeout(function(){window.location.reload()}, 1800000);</script>", height=0)
+
+    if st.button("Escanear mercado", type="primary") or intervalo_auto != "Manual":
         resultados = []
         prog = st.progress(0)
         for i, par in enumerate(pares_smc):
