@@ -99,7 +99,6 @@ def detectar_estrutura(df, par):
     hora_sh=sh.index[-1]; hora_sl=sl.index[-1]
     p=float(df["Close"].iloc[-1]); pp=float(df["Close"].iloc[-2])
     hh=ush>psh; lh=ush<psh; hl=usl>psl; ll=usl<psl
-    # Classificacao correcta HH+HL=ALTA, LH+LL=BAIXA, HH+LL=TRANSICAO, LH+HL=CONSOLIDACAO
     if hh and hl: estrutura="ALTA"
     elif lh and ll: estrutura="BAIXA"
     elif hh and ll: estrutura="TRANSICAO"
@@ -123,7 +122,8 @@ def detectar_estrutura(df, par):
     elif bos: estado="EXPANSAO"
     elif estrutura in ["ALTA","BAIXA"]: estado="CORRECAO"
     else: estado="INDEFINIDO"
-    return {"estrutura":estrutura,"estado":estado,"pontos":pontos,"bos":bos,"choch":choch,"ush":round(ush,p_round),"usl":round(usl,p_round)}
+    return {"estrutura":estrutura,"estado":estado,"pontos":pontos,"bos":bos,"choch":choch,
+            "ush":round(ush,p_round),"usl":round(usl,p_round)}
 
 def detectar_liquidez(df, par):
     p_round = precisao(par)
@@ -132,17 +132,14 @@ def detectar_liquidez(df, par):
     h5=df["High"].tail(5); l5=df["Low"].tail(5)
     bsl=round(float(h50.max()),p_round)
     ssl=round(float(l50.min()),p_round)
-    # BSL estado: PENDENTE / VARRIDA / INVALIDADA
     bsl_superado=float(h5.max())>bsl
     if not bsl_superado: bsl_estado="PENDENTE"
     elif bsl_superado and p<bsl: bsl_estado="VARRIDA"
     else: bsl_estado="INVALIDADA"
-    # SSL estado: PENDENTE / VARRIDA / INVALIDADA
     ssl_superado=float(l5.min())<ssl
     if not ssl_superado: ssl_estado="PENDENTE"
     elif ssl_superado and p>ssl: ssl_estado="VARRIDA"
     else: ssl_estado="INVALIDADA"
-    # EQH
     highs=h50.nlargest(5)
     eqh=None; eqh_estado=None
     for i in range(len(highs)):
@@ -153,7 +150,6 @@ def detectar_liquidez(df, par):
                 eqh=nivel; eqh_estado="ROMPIDO" if p>nivel*1.001 else "ACTIVO"
                 break
         if eqh: break
-    # EQL
     lows=l50.nsmallest(5)
     eql=None; eql_estado=None
     for i in range(len(lows)):
@@ -270,7 +266,7 @@ def determinar_fase(est_m15, liq, obs, fvgs):
     liq_pendente=liq["bsl_estado"]=="PENDENTE" or liq["ssl_estado"]=="PENDENTE"
     liq_invalidada=liq["bsl_estado"]=="INVALIDADA" or liq["ssl_estado"]=="INVALIDADA"
     bos=est_m15["bos"]; choch=est_m15["choch"]
-    estrutura=est_m15["estrutura"]; estado=est_m15["estado"]
+    estrutura=est_m15["estrutura"]
     tem_ob=len(obs)>0
     tem_fvg=len([f for f in fvgs if f["estado"]=="ABERTO"])>0
     if grab and choch: return "MANIPULACAO","Varredura de liquidez seguida de mudanca de carater. Possivel reversao em curso."
@@ -280,7 +276,7 @@ def determinar_fase(est_m15, liq, obs, fvgs):
     elif choch: return "REVERSAO","Mudanca de carater confirmada. Estrutura a inverter."
     elif bos and estrutura=="ALTA": return "EXPANSAO","Rompimento altista confirmado. Continuacao de estrutura de alta."
     elif bos and estrutura=="BAIXA": return "EXPANSAO","Rompimento baixista confirmado. Continuacao de estrutura de baixa."
-    elif estrutura in ["ALTA","BAIXA"] and estado=="CORRECAO": return "CORRECAO","Preco em correcao dentro da estrutura dominante. Liquidez pendente: "+("SIM" if liq_pendente else "NAO")+"."
+    elif estrutura in ["ALTA","BAIXA"]: return "CORRECAO","Preco em correcao dentro da estrutura dominante. Liquidez pendente: "+("SIM" if liq_pendente else "NAO")+"."
     elif estrutura=="TRANSICAO": return "TRANSICAO","HH + LL — expansao dos extremos. Estrutura mista, sem direcao clara."
     elif estrutura=="CONSOLIDACAO": return "ACUMULACAO","LH + HL — mercado em compressao. Aguardar rompimento para definir direcao."
     elif tem_ob and tem_fvg: return "CORRECAO","Preco em zona institucional com gaps activos."
@@ -314,11 +310,13 @@ def escanear_par(par, macro):
         fvgs_ativos=[f for f in todos_fvgs if f["estado"]!="PREENCHIDO"]
         fase,fase_desc=determinar_fase(est_m15,liquidez,obs_validos,fvgs_ativos)
         gc.collect()
+        liq=liquidez
         return {"par":nome,"fluxo_h1":fluxo_h1,"est_m15":est_m15,"est_m5":est_m5,
                 "ctx_macro":ctx_macro,"qualidade":qualidade,"fase":fase,"fase_desc":fase_desc,
                 "liquidez":liquidez,"ob_h1":ob_h1,"ob_m15":ob_m15,
                 "fvg_h1":fvg_h1,"fvg_m15":fvg_m15,"fvg_m5":fvg_m5,"niveis":niveis,
-                "ob_validos":len(obs_validos),"fvg_abertos":len([f for f in todos_fvgs if f["estado"]=="ABERTO"]),
+                "ob_validos":len(obs_validos),
+                "fvg_abertos":len([f for f in todos_fvgs if f["estado"]=="ABERTO"]),
                 "liq_nao_varrida":sum([liq["bsl_estado"]=="PENDENTE",liq["ssl_estado"]=="PENDENTE",
                                        liq["eqh"] is not None and liq["eqh_estado"]=="ACTIVO",
                                        liq["eql"] is not None and liq["eql_estado"]=="ACTIVO"])}
