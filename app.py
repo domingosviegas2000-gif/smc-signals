@@ -12,7 +12,7 @@ import requests
 from datetime import datetime, timezone
 import sys
 sys.path.insert(0, "/app")
-from scanner_smc import escanear_par, pares_smc, nomes_smc
+from scanner_smc import escanear_par, pares_smc, nomes_smc, obter_contexto_macro
 
 try:
     import resend
@@ -343,100 +343,139 @@ else:
     st.caption("EURUSD | GBPUSD | USDJPY | XAUUSD | BTCUSD | Leitura pura de estrutura e liquidez, sem sugestao de trade")
     st.divider()
 
+    # CONTEXTO GLOBAL
+    with st.spinner("A carregar contexto macro..."):
+        macro = obter_contexto_macro()
+
+    st.markdown("### Contexto Global")
+    c1,c2,c3 = st.columns(3)
+    c1.metric("USD", macro["usd"])
+    c2.metric("OURO", macro["ouro"])
+    c3.metric("RISCO GLOBAL", macro["risco"])
+    if macro["proximo_evento"]:
+        st.info("Proximo evento de alto impacto: " + macro["proximo_evento"])
+    st.divider()
+
     with st.expander("Como ler este scanner", expanded=False):
         st.markdown("""
-**Este scanner mostra apenas o que o mercado esta a fazer. Nao sugere compra nem venda.**
+**Fluxo Institucional (H1)** = direcao principal do mercado baseada na estrutura de topos e fundos.
+**Estrutura M15** = classificacao da estrutura operacional: ALTA / BAIXA / TRANSICAO / CONSOLIDACAO.
+**Estado M15** = o que a estrutura esta a fazer agora: EXPANSAO / REVERSAO / CORRECAO / INDEFINIDO.
+**Estrutura M5** = confirmacao de precisao na mesma logica.
 
-**Estrutura:** mostra topos e fundos (HH, HL, LH, LL) e os momentos em que a estrutura foi rompida (Rompimento de Estrutura) ou mudou de carater (Mudanca de Carater).
+**Classificacao da estrutura:**
+- **ALTA** = HH + HL (topos e fundos crescentes)
+- **BAIXA** = LH + LL (topos e fundos decrescentes)
+- **TRANSICAO** = HH + LL (expansao dos extremos, sem direcao clara)
+- **CONSOLIDACAO** = LH + HL (compressao, mercado a acumular)
 
-**Liquidez:** BSL e SSL sao os niveis onde existe liquidez acumulada acima e abaixo do preco. Quando o preco passa por esses niveis e volta, a liquidez foi varrida.
+**Qualidade:**
+- **A+** = Macro + H1 + M15 + M5 alinhados
+- **A** = H1 + M15 + M5 alinhados
+- **B** = H1 + M15 alinhados
+- **C** = Apenas M15 + M5 alinhados
+- **D** = Estruturas em conflito
 
-**Blocos de Ordem:** zonas onde instituicoes deixaram ordens por executar. Quanto maior a forca, menos vezes a zona foi testada.
-
-**Gap de Valor Justo (FVG):** zonas de desequilibrio de preco em H1, M15 e M5. Um gap aberto tende a ser revisitado pelo preco.
-
-**Fase de Mercado:** classificacao neutra do momento actual — Expansao (tendencia em curso), Manipulacao (varredura de liquidez), Transicao (possivel mudanca) ou Correcao (preco em zona institucional).
-
-A leitura e decisao de entrada e sempre tua.
+**Liquidez:** BSL varrida quando High supera o nivel. SSL varrida quando Low fica abaixo do nivel.
         """)
 
     if st.button("Escanear mercado", type="primary"):
         resultados = []
         prog = st.progress(0)
         for i, par in enumerate(pares_smc):
-            r = escanear_par(par)
+            r = escanear_par(par, macro)
             if r: resultados.append(r)
             prog.progress((i+1)/len(pares_smc))
             gc.collect()
 
         for r in resultados:
+            st.markdown("---")
             st.markdown("## " + r["par"])
-            c1,c2,c3,c4 = st.columns(4)
-            c1.metric("Tendencia H1", r["tend_h1"])
-            c2.metric("Tendencia M15", r["tend_m15"])
-            c3.metric("Tendencia M5", r["tend_m5"])
-            c4.metric("Blocos Validos", r["ob_validos"])
 
-            st.info("Fase de Mercado: " + r["fase_mercado"])
+            # RESUMO
+            c1,c2,c3 = st.columns(3)
+            ctx_label = "ALINHADO" if r["ctx_macro"]=="ALINHADO" else "NEUTRO" if r["ctx_macro"]=="NEUTRO" else "CONTRA"
+            c1.metric("Contexto Macro", ctx_label)
+            c2.metric("Qualidade da Estrutura", r["qualidade"])
+            c3.metric("Fluxo Institucional (H1)", r["fluxo_h1"])
 
+            c1b,c2b,c3b,c4b = st.columns(4)
+            c1b.metric("Estrutura M15", r["est_m15"]["estrutura"])
+            c2b.metric("Estado M15", r["est_m15"]["estado"])
+            c3b.metric("Estrutura M5", r["est_m5"]["estrutura"])
+            c4b.metric("Estado M5", r["est_m5"]["estado"])
+
+            # FASE DE MERCADO
+            st.info(r["fase"] + " — " + r["fase_desc"])
+
+            # ESTRUTURA
             with st.expander("Estrutura (M15 + M5)", expanded=False):
-                if r["estrutura_m15"]:
+                if r["est_m15"]["pontos"]:
                     st.markdown("**M15:**")
-                    for e in r["estrutura_m15"]:
+                    for e in r["est_m15"]["pontos"]:
                         hora_str = e["hora"].strftime("%H:%M") if hasattr(e["hora"],"strftime") else str(e["hora"])
                         st.write(e["tipo"] + " — Preco: " + str(e["preco"]) + " — Hora: " + hora_str)
-                if r["estrutura_m5"]:
+                if r["est_m5"]["pontos"]:
                     st.markdown("**M5:**")
-                    for e in r["estrutura_m5"]:
+                    for e in r["est_m5"]["pontos"]:
                         hora_str = e["hora"].strftime("%H:%M") if hasattr(e["hora"],"strftime") else str(e["hora"])
                         st.write(e["tipo"] + " — Preco: " + str(e["preco"]) + " — Hora: " + hora_str)
-                if not r["estrutura_m15"] and not r["estrutura_m5"]:
+                if not r["est_m15"]["pontos"] and not r["est_m5"]["pontos"]:
                     st.write("Sem estrutura relevante no momento")
 
+            # LIQUIDEZ
             with st.expander("Liquidez", expanded=False):
                 liq = r["liquidez"]
-                c1,c2 = st.columns(2)
-                c1.write("**BSL (liquidez acima):** " + str(liq["bsl"]) + (" — VARRIDA" if liq["bsl_varrida"] else ""))
-                c2.write("**SSL (liquidez abaixo):** " + str(liq["ssl"]) + (" — VARRIDA" if liq["ssl_varrida"] else ""))
-                if liq["eqh"]: st.write("**EQH (topos iguais):** " + str(liq["eqh"]))
-                if liq["eql"]: st.write("**EQL (fundos iguais):** " + str(liq["eql"]))
+                st.write("BSL (liquidez acima): " + str(liq["bsl"]) + (" — VARRIDA" if liq["bsl_varrida"] else ""))
+                st.write("SSL (liquidez abaixo): " + str(liq["ssl"]) + (" — VARRIDA" if liq["ssl_varrida"] else ""))
+                if liq["eqh"]: st.write("EQH (topos iguais): " + str(liq["eqh"]))
+                if liq["eql"]: st.write("EQL (fundos iguais): " + str(liq["eql"]))
                 if liq["grab_topo"]: st.write("Varredura de liquidez detectada no topo")
                 if liq["grab_fundo"]: st.write("Varredura de liquidez detectada no fundo")
 
-            with st.expander("Blocos de Ordem", expanded=True):
-                obs = [o for o in (r["ob_m15"]+r["ob_h1"]) if o["valido"]]
+            # ORDER BLOCKS
+            with st.expander("Blocos de Ordem (forca >= 70%)", expanded=True):
+                obs = r["ob_h1"] + r["ob_m15"]
                 if obs:
                     for ob in obs:
-                        st.markdown("**" + ob["tipo"] + " (" + ob["tf"] + ")**")
-                        st.write("Alto: " + str(ob["alto"]) + " | Baixo: " + str(ob["baixo"]))
                         hora_c = ob["hora_criacao"].strftime("%H:%M") if hasattr(ob["hora_criacao"],"strftime") else str(ob["hora_criacao"])
-                        st.write("Criado: " + hora_c + " | Idade: " + ob["idade"] + " | Testes: " + str(ob["testes"]))
-                        st.write("Estado: VALIDO | Forca: " + str(ob["forca"]) + "%")
+                        st.markdown("**" + ob["tipo"] + " (" + ob["tf"] + ")**")
+                        col1,col2 = st.columns(2)
+                        col1.write("Alto: " + str(ob["alto"]))
+                        col2.write("Baixo: " + str(ob["baixo"]))
+                        col1.write("Criado: " + hora_c)
+                        col2.write("Idade: " + ob["idade"])
+                        col1.write("Testes: " + str(ob["testes"]))
+                        col2.write("Estado: VALIDO | Forca: " + str(ob["forca"]) + "%")
                         st.divider()
                 else:
-                    st.write("Nenhum bloco de ordem valido (forca >= 70%) no momento")
+                    st.write("Nenhum bloco de ordem valido no momento")
 
+            # FVG
             with st.expander("Gap de Valor Justo (H1 + M15 + M5)", expanded=True):
                 fvgs = r["fvg_h1"] + r["fvg_m15"] + r["fvg_m5"]
-                if fvgs:
-                    for f in fvgs:
+                fvgs_ativos = [f for f in fvgs if f["estado"] != "PREENCHIDO"]
+                if fvgs_ativos:
+                    for f in fvgs_ativos:
                         st.markdown("**" + f["tipo"] + " (" + f["tf"] + ")**")
-                        st.write("Topo: " + str(f["topo"]) + " | Base: " + str(f["base"]))
-                        st.write("Estado: " + f["estado"] + " | Idade: " + f["idade"])
+                        col1,col2 = st.columns(2)
+                        col1.write("Topo: " + str(f["topo"]))
+                        col2.write("Base: " + str(f["base"]))
+                        col1.write("Estado: " + f["estado"])
+                        col2.write("Idade: " + f["idade"])
                         st.divider()
                 else:
-                    st.write("Nenhum gap relevante no momento")
+                    st.write("Nenhum gap activo no momento")
 
+            # NIVEIS INSTITUCIONAIS
             with st.expander("Niveis Institucionais", expanded=False):
                 niv = r["niveis"]
-                c1,c2 = st.columns(2)
-                c1.write("**PDH (Maxima do dia anterior):** " + str(niv["pdh"]))
-                c1.write("**PDL (Minima do dia anterior):** " + str(niv["pdl"]))
-                c2.write("**PWH (Maxima da semana anterior):** " + str(niv["pwh"]))
-                c2.write("**PWL (Minima da semana anterior):** " + str(niv["pwl"]))
+                col1,col2 = st.columns(2)
+                col1.write("PDH (Maxima dia anterior): " + str(niv["pdh"]))
+                col1.write("PDL (Minima dia anterior): " + str(niv["pdl"]))
+                col2.write("PWH (Maxima semana anterior): " + str(niv["pwh"]))
+                col2.write("PWL (Minima semana anterior): " + str(niv["pwl"]))
 
-            st.divider()
-            st.divider()
     else:
         st.info("Clica em 'Escanear mercado' para mapear a estrutura institucional dos 5 pares.")
 
