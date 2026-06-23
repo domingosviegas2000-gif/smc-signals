@@ -249,9 +249,12 @@ def detectar_fvg(df, par, tf_label):
             if direcao=="BULL" and float(df["Low"].iloc[i+1])>float(df["High"].iloc[i-1]):
                 topo=round(float(df["Low"].iloc[i+1]),p_round)
                 base=round(float(df["High"].iloc[i-1]),p_round)
-                # FVG altista: preco abaixo da base = preenchido
-                if p<=base: estado="PREENCHIDO"
-                elif p<topo: estado="PARCIAL"
+                # FVG altista:
+                # PREENCHIDO: preco caiu abaixo da base OU subiu acima do topo
+                # PARCIAL: preco esta dentro do gap
+                # ABERTO: preco ainda nao entrou no gap
+                if p<=base or p>=topo: estado="PREENCHIDO"
+                elif base<p<topo: estado="PARCIAL"
                 else: estado="ABERTO"
                 if estado!="PREENCHIDO":
                     fvgs.append({"tipo":"Gap de Valor Justo Altista","tf":tf_label,
@@ -260,9 +263,12 @@ def detectar_fvg(df, par, tf_label):
             elif direcao=="BEAR" and float(df["High"].iloc[i+1])<float(df["Low"].iloc[i-1]):
                 topo=round(float(df["Low"].iloc[i-1]),p_round)
                 base=round(float(df["High"].iloc[i+1]),p_round)
-                # FVG baixista: preco acima do topo = preenchido
-                if p>=topo: estado="PREENCHIDO"
-                elif p>base: estado="PARCIAL"
+                # FVG baixista:
+                # PREENCHIDO: preco subiu acima do topo OU caiu abaixo da base
+                # PARCIAL: preco esta dentro do gap
+                # ABERTO: preco ainda nao entrou no gap
+                if p>=topo or p<=base: estado="PREENCHIDO"
+                elif base<p<topo: estado="PARCIAL"
                 else: estado="ABERTO"
                 if estado!="PREENCHIDO":
                     fvgs.append({"tipo":"Gap de Valor Justo Baixista","tf":tf_label,
