@@ -426,10 +426,10 @@ else:
             # LIQUIDEZ
             with st.expander("Liquidez", expanded=False):
                 liq = r["liquidez"]
-                st.write("BSL (liquidez acima): " + str(liq["bsl"]) + (" — VARRIDA" if liq["bsl_varrida"] else ""))
-                st.write("SSL (liquidez abaixo): " + str(liq["ssl"]) + (" — VARRIDA" if liq["ssl_varrida"] else ""))
-                if liq["eqh"]: st.write("EQH (topos iguais): " + str(liq["eqh"]))
-                if liq["eql"]: st.write("EQL (fundos iguais): " + str(liq["eql"]))
+                st.write("BSL (liquidez acima): " + str(liq["bsl"]) + " — " + liq["bsl_estado"])
+                st.write("SSL (liquidez abaixo): " + str(liq["ssl"]) + " — " + liq["ssl_estado"])
+                if liq["eqh"]: st.write("EQH (topos iguais): " + str(liq["eqh"]) + " — " + str(liq["eqh_estado"]))
+                if liq["eql"]: st.write("EQL (fundos iguais): " + str(liq["eql"]) + " — " + str(liq["eql_estado"]))
                 if liq["grab_topo"]: st.write("Varredura de liquidez detectada no topo")
                 if liq["grab_fundo"]: st.write("Varredura de liquidez detectada no fundo")
 
